@@ -1,9 +1,11 @@
 import React from 'react';
-import { View, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Platform, KeyboardAvoidingView, LogBox } from 'react-native';
 import { GiftedChat, Bubble, SystemMessage, Day } from 'react-native-gifted-chat';
 import * as firebase from 'firebase';
 import 'firebase/firestore';
 
+//Under, LogBox is a at the moment a temporarily workaround for the 'Warning' issue specified in the array.
+LogBox.ignoreLogs(['Setting a timer for a long period of time'])
 
 //Under, firebaseConfig are the credentials from the Database created in Firebase. (Firebase/ProjectSettings/YourApps/WebApp).
 // Then, firebaseConfig is used under in firebase.initializeApp.
