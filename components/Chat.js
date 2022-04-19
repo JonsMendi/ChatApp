@@ -1,8 +1,11 @@
 import React from 'react';
 import { View, Platform, KeyboardAvoidingView, LogBox } from 'react-native';
-import { GiftedChat, Bubble, SystemMessage, Day } from 'react-native-gifted-chat';
+import { GiftedChat, Bubble, SystemMessage, Day, InputToolbar } from 'react-native-gifted-chat';
 import * as firebase from 'firebase';
 import 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+
 
 //Under, LogBox is a at the moment a temporarily workaround for the 'Warning' issue specified in the array.
 LogBox.ignoreLogs(['Setting a timer for a long period of time'])
@@ -30,6 +33,7 @@ export default class Chat extends React.Component {
                 name: "",
                 avatar: "",
             },
+            isConnected: false,
         }
 
         //Under, the condition verifies if the firebaseConfig credentials are correct to initialize the app.
@@ -46,8 +50,20 @@ export default class Chat extends React.Component {
         //Under, will setOptions makes the typed 'name' being saved in the state and by consequence showing it in the navigation menu.
         let { name } = this.props.route.params;
         this.props.navigation.setOptions({ title: name });
-        //Under, user authentication
-        this.authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
+
+        //Under, NetInfo wrapped all the componentDidMount functions in one condition to set the app in order if, the user is online or offline. 
+        // If is online it synchronizes with the firebase and update the chat.
+        NetInfo.fetch().then((connection) => {
+            if (connection.isConnected) {
+                this.setState({ isConnected: true });
+                console.log('Online');
+                // Under, check for updates in the collection
+                this.unsubscribe = this.referenceChatMessages
+                .orderBy("createdAt", "desc")
+                .onSnapshot(this.onCollectionUpdate)
+            
+            //Under, user authentication anonymously(anonymously was defined in the database(firebase) setups)
+            this.authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
             if (!user) {
             await firebase.auth().signInAnonymously();
             }
@@ -61,17 +77,28 @@ export default class Chat extends React.Component {
                     avatar: "https://placeimg.com/140/140/any",
                 },
             });
-            // Under, check for updates in the collection
-            this.unsubscribe = this.referenceChatMessages
-            .orderBy("createdAt", "desc")
-            .onSnapshot(this.onCollectionUpdate)
-        });
+            //Under, referencing messages of current users
+            this.refMsgsUser = firebase.firestore().collection('messages').where('uid', '==', this.state.uid);
+            });
+            //Under, save messages in AsyncStorage to be seen when offline
+            this.saveMessages();
+        } else {
+            //Under, If the user is Offline, it will getMessages() saved in AsyncStorage by saveMessages().
+            this.setState({ isConnected: false });
+            console.log('Offline');
+            this.getMessages();
+        }
+        });   
     }
-
+    
     componentWillUnmount() {
         // Under, unsubscribe from collection updates and authUnsubscribe. Otherwise it will be in one endless loop.
-        this.authUnsubscribe();
-        this.unsubscribe();
+        NetInfo.fetch().then((connection) => {
+            if (connection.isConnected) {
+                this.authUnsubscribe();
+                this.unsubscribe();   
+            }
+        }); 
     }
 
     // Under, when updated set the messages state with the current data
@@ -95,7 +122,43 @@ export default class Chat extends React.Component {
         this.setState({
             messages: messages
         });
+        //Under, save messages in AsyncStorage.
+        this.saveMessages();
     };
+
+    // Under, get the messages from the AsyncStorage.
+    getMessages = async () => {
+        let messages = '';
+        try {
+          messages = await AsyncStorage.getItem('messages') || [];
+          this.setState({
+            messages: JSON.parse(messages)
+          });
+        } catch (error) {
+          console.log(error.message);
+        }
+    };
+
+    //Under, saves the messages in the AsyncStorage.
+    saveMessages = async () => {
+        try {
+          await AsyncStorage.setItem('messages', JSON.stringify(this.state.messages));
+        } catch (error) {
+          console.log(error.message);
+        }
+    }
+
+    //Under, deletes the messages from AsyncStorage.
+    deleteMessages = async () => {
+        try {
+          await AsyncStorage.removeItem('messages');
+          this.setState({
+            messages: []
+          })
+        } catch (error) {
+          console.log(error.message);
+        }
+    }
 
     // Under, add messages to database
     addMessages() { 
@@ -116,6 +179,8 @@ export default class Chat extends React.Component {
         }), () => { 
             //Under, addMessages() function is added here since now the messages are being defined on that function.
             this.addMessages();
+            //Under, saveMessages() function is added here to save the messages on the AsyncStorage when user send it.
+            this.saveMessages();
         })
     }
 
@@ -152,6 +217,18 @@ export default class Chat extends React.Component {
         )
     }
 
+    //Under, hides the toolbar if the User is offline.
+    renderInputToolbar(props) {
+        if (this.state.isConnected == false) {
+        } else {
+          return(
+            <InputToolbar
+            {...props}
+            />
+          );
+        }
+    }
+
     render() {
         const { backGroundColor } = this.props.route.params;
 
@@ -160,6 +237,7 @@ export default class Chat extends React.Component {
             {/*Under, GiftedChat is a library from react-native that provides a complete Chat Interface. */}
             {/*Under, 'render...' allows to read and accept the changes made in the own functions above. */}
             <GiftedChat
+                renderInputToolbar={this.renderInputToolbar.bind(this)}
                 renderDay={this.renderDay.bind(this)}
                 renderSystemMessage={this.renderSystemMessage.bind(this)}
                 renderBubble={this.renderBubble.bind(this)}
