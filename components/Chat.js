@@ -5,6 +5,8 @@ import * as firebase from 'firebase';
 import 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import MapView from 'react-native-maps';
+import CustomActions from './CustomActions';
 
 
 //Under, LogBox is a at the moment a temporarily workaround for the 'Warning' issue specified in the array.
@@ -34,6 +36,8 @@ export default class Chat extends React.Component {
                 avatar: "",
             },
             isConnected: false,
+            image: null,
+            location: null
         }
 
         //Under, the condition verifies if the firebaseConfig credentials are correct to initialize the app.
@@ -116,7 +120,9 @@ export default class Chat extends React.Component {
                     _id: data.user._id,
                     name: data.user.name,
                     avatar: data.user.avatar
-                }
+                },
+                image: data.image || null,
+                location: data.location || null,
             });
         });
         this.setState({
@@ -168,7 +174,9 @@ export default class Chat extends React.Component {
       _id: message._id,
       text: message.text || "",
       createdAt: message.createdAt,
-      user: this.state.user
+      user: this.state.user,
+      image: message.image || "",
+      location: message.location || null
     });
   }
 
@@ -182,6 +190,28 @@ export default class Chat extends React.Component {
             //Under, saveMessages() function is added here to save the messages on the AsyncStorage when user send it.
             this.saveMessages();
         })
+    }
+
+    renderCustomView(props) {
+        const { currentMessage } = props;
+        if (currentMessage.location) {
+          return (
+            <MapView
+              style={{ width: 150, height: 100, borderRadius: 13, margin: 3 }}
+              region={{
+                latitude: currentMessage.location.latitude,
+                longitude: currentMessage.location.longitude,
+                latitudeDelta: 0.0922,
+                longitudeDelta: 0.0421,
+              }}
+            />
+          );
+        }
+        return null;
+    }
+
+    renderCustomActions(props) {
+        return <CustomActions {...props} />;
     }
 
     //Under, renderBubble is function from GiftedChat that allows to change the bubble messages displayed in the chat.
@@ -237,6 +267,8 @@ export default class Chat extends React.Component {
             {/*Under, GiftedChat is a library from react-native that provides a complete Chat Interface. */}
             {/*Under, 'render...' allows to read and accept the changes made in the own functions above. */}
             <GiftedChat
+                renderActions={this.renderCustomActions}
+                renderCustomView={this.renderCustomView}
                 renderInputToolbar={this.renderInputToolbar.bind(this)}
                 renderDay={this.renderDay.bind(this)}
                 renderSystemMessage={this.renderSystemMessage.bind(this)}
