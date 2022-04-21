@@ -10,7 +10,7 @@ import CustomActions from './CustomActions';
 
 
 //Under, LogBox is a at the moment a temporarily workaround for the 'Warning' issue specified in the array.
-LogBox.ignoreLogs(['Setting a timer for a long period of time'])
+LogBox.ignoreAllLogs();
 
 //Under, firebaseConfig are the credentials from the Database created in Firebase. (Firebase/ProjectSettings/YourApps/WebApp).
 // Then, firebaseConfig is used under in firebase.initializeApp.
@@ -30,11 +30,7 @@ export default class Chat extends React.Component {
         this.state = {
             messages: [],
             uid: 0,
-            user: {
-                _id: "",
-                name: "",
-                avatar: "",
-            },
+            user: '',
             isConnected: false,
             image: null,
             location: null
@@ -44,94 +40,135 @@ export default class Chat extends React.Component {
         if (!firebase.apps.length){
             firebase.initializeApp(firebaseConfig);
         }
-
-        // Under, referenceChatMessages connects to the 'messages' collection in the Firestore.
-        this.referenceChatMessages = firebase.firestore().collection('messages');
-        this.refMsgsUser = null;
     }
 
     componentDidMount() {
+        // to find out the user's connection status
+        NetInfo.fetch().then(connection => {
+          // if user is online, fetch data from server
+          if (connection.isConnected) {
+            // Under, referenceChatMessages connects to the 'messages' collection in the Firestore.
+            this.referenceChatMessages = firebase.firestore().collection('messages');
+            this.setState({
+              isConnected: true
+            });
+    
+            // listen to authentication events
+            this.authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
+              // when no user is signed in, create new user by signing in anonymously (a temporary account)
+              if (!user) {
+                await firebase.auth().signInAnonymously();
+              }
+    
+              // update user state with currently active user data
+              this.setState({
+                uid: user.uid,
+                messages: [],         
+                user: {
+                  _id: user.uid,
+                  name: name,
+                  avatar: 'https://placeimg.com/140/140/any'
+                }
+              });
+    
+              // access stored messages of current user
+              this.refMsgsUser = firebase
+                .firestore()
+                .collection('messages')
+                .where('uid', '==', this.state.uid);
+    
+              // listens for updates in the collection
+              this.unsubscribe = this.referenceChatMessages
+                .orderBy('createdAt', 'desc')
+                .onSnapshot(this.onCollectionUpdate);
+            });
+    
+            //Under, save messages and user when online
+            this.saveMessages();
+            this.saveUser();
+          } else {
+            this.setState({
+              isConnected: false
+            });     
+            //Under, when Offline loads messages from AsyncStorage.
+            this.getMessages();
+            this.getUser();
+          }
+        });
+
         //Under, will setOptions makes the typed 'name' being saved in the state and by consequence showing it in the navigation menu.
         let { name } = this.props.route.params;
         this.props.navigation.setOptions({ title: name });
-
-        //Under, NetInfo wrapped all the componentDidMount functions in one condition to set the app in order if, the user is online or offline. 
-        // If is online it synchronizes with the firebase and update the chat.
-        NetInfo.fetch().then((connection) => {
-            if (connection.isConnected) {
-                this.setState({ isConnected: true });
-                console.log('Online');
-                // Under, check for updates in the collection
-                this.unsubscribe = this.referenceChatMessages
-                .orderBy("createdAt", "desc")
-                .onSnapshot(this.onCollectionUpdate)
-            
-            //Under, user authentication anonymously(anonymously was defined in the database(firebase) setups)
-            this.authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
-            if (!user) {
-            await firebase.auth().signInAnonymously();
-            }
-            //Under, update user state with currently active user data
-            this.setState({
-                uid: user.uid,
-                messages: [],
-                user: {
-                    _id: user.uid,
-                    name: name,
-                    avatar: "https://placeimg.com/140/140/any",
-                },
-            });
-            //Under, referencing messages of current users
-            this.refMsgsUser = firebase.firestore().collection('messages').where('uid', '==', this.state.uid);
-            });
-            //Under, save messages in AsyncStorage to be seen when offline
-            this.saveMessages();
-        } else {
-            //Under, If the user is Offline, it will getMessages() saved in AsyncStorage by saveMessages().
-            this.setState({ isConnected: false });
-            console.log('Offline');
-            this.getMessages();
-        }
-        });   
     }
     
     componentWillUnmount() {
-        // Under, unsubscribe from collection updates and authUnsubscribe. Otherwise it will be in one endless loop.
-        NetInfo.fetch().then((connection) => {
-            if (connection.isConnected) {
-                this.authUnsubscribe();
-                this.unsubscribe();   
-            }
-        }); 
+        if (this.state.isConnected) {
+          // stop listening to authentication
+          this.authUnsubscribe();
+          // stop listening for changes
+          this.unsubscribe();
+        }
     }
 
-    // Under, when updated set the messages state with the current data
+    // takes snapshot on collection update
     onCollectionUpdate = (querySnapshot) => {
         const messages = [];
         // go through each document
         querySnapshot.forEach((doc) => {
-            // get the QueryDocumentSnapshot's data
-            let data = doc.data();
-            messages.push({
-                _id: data._id,
-                text: data.text,
-                createdAt: data.createdAt.toDate(),
-                user: {
-                    _id: data.user._id,
-                    name: data.user.name,
-                    avatar: data.user.avatar
-                },
-                image: data.image || null,
-                location: data.location || null,
-            });
+        // get the queryDocumentSnapshot's data
+        var data = doc.data();
+        // each field within each doc is saved into the messages object
+        messages.push({
+            //Under, 'doc' was used instead of 'data' to synchronized with correct 'id' with GiftedChat.
+            _id: doc.id,
+            text: data.text || '',
+            createdAt: data.createdAt.toDate(),
+            user: {
+            _id: data.user._id,
+            name: data.user.name,
+            avatar: data.user.avatar
+            },
+            image: data.image || null,
+            location: data.location || null
         });
+        });
+        // renders messages object in the app
         this.setState({
-            messages: messages
+        messages: messages
         });
-        //Under, save messages in AsyncStorage.
         this.saveMessages();
-    };
+        this.saveUser();
+    }
 
+    //Under, onSend() is a function from GiftedChat that assure that your new messages are saved and attached to old ones.
+    onSend(messages = []) {
+        this.setState(previousState => ({
+            messages: GiftedChat.append(previousState.messages, messages),
+        }), () => { 
+            //Under, addMessages() function is added here since now the messages are being defined on that function.
+            this.addMessages();
+            //Under, saveMessages() function is added here to save the messages on the AsyncStorage when user send it.
+            this.saveMessages();
+            //Under, saveUser() function is added here to save the user on the AsyncStorage to be synchronized offline with their own messages.
+            this.saveUser();
+        })
+    }
+
+    // Under, add messages to database
+    addMessages() { 
+        const message = this.state.messages[0];
+        // add a new messages to the collection. Same structure used to build the collection documents in database is used here. Otherwise will not work.
+        this.referenceChatMessages.add({
+        _id: message._id,
+        text: message.text || "",
+        createdAt: message.createdAt,
+        user: this.state.user,
+        image: message.image || "",
+        location: message.location || null
+        });
+    }
+
+    //START Methods for AsyncStorage.
     // Under, get the messages from the AsyncStorage.
     getMessages = async () => {
         let messages = '';
@@ -166,31 +203,30 @@ export default class Chat extends React.Component {
         }
     }
 
-    // Under, add messages to database
-    addMessages() { 
-    const message = this.state.messages[0];
-    // add a new messages to the collection. Same structure used to build the collection documents in database is used here. Otherwise will not work.
-    this.referenceChatMessages.add({
-      _id: message._id,
-      text: message.text || "",
-      createdAt: message.createdAt,
-      user: this.state.user,
-      image: message.image || "",
-      location: message.location || null
-    });
-  }
-
-    //Under, onSend() is a function from GiftedChat that assure that your new messages are saved and attached to old ones.
-    onSend(messages = []) {
-        this.setState(previousState => ({
-            messages: GiftedChat.append(previousState.messages, messages),
-        }), () => { 
-            //Under, addMessages() function is added here since now the messages are being defined on that function.
-            this.addMessages();
-            //Under, saveMessages() function is added here to save the messages on the AsyncStorage when user send it.
-            this.saveMessages();
-        })
+    //Under, saves user to asyncStorage and furthermore display the bubble messages in the correct side when Offline.
+    saveUser = async () => {
+        try {
+        await AsyncStorage.setItem('user', JSON.stringify(this.state.user));
+        } catch (err) {
+        console.log(err.message);
+        }
     }
+
+    //Under, get the user from AsyncStorage and furthermore use to identify to their own conversation(bubble) when Offline.
+    getUser = async () => {
+        let user = '';
+        try {
+        user = await AsyncStorage.getItem('user') || [];
+        this.setState({
+            user: JSON.parse(user)
+        });
+        } catch (err) {
+        console.log(err.message);
+        }
+    }
+    //ENDS, Methods for AsyncStorage.
+
+    
 
     renderCustomView(props) {
         const { currentMessage } = props;

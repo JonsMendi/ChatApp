@@ -11,20 +11,24 @@ export default class CustomActions extends Component {
 
     pickImage = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        console.log('permission!');
         try {
             if (status === 'granted') {
+                console.log('permission?');
                 let result = await ImagePicker.launchImageLibraryAsync({
                     mediaTypes: ImagePicker.MediaTypeOptions.Images,
                 }).catch((error) => {
                     console.log(error);
                 });
                 if (!result.cancelled) {
+                    console.log('not cancelled');
                     const imageUrl = await this.uploadImage(result.uri);
+                    console.log(imageUrl, 'image did Upload?');
                     this.props.onSend({ image: imageUrl });
                 }
             }
         } catch (error) {
-            console.error(error);
+            console.error(error, 'cancelled');
         }
     };
 
@@ -32,18 +36,20 @@ export default class CustomActions extends Component {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         try {
             if (status === 'granted') {
+                
                 let result = await ImagePicker.launchCameraAsync({
                     mediaTypes: ImagePicker.MediaTypeOptions.All,
                 }).catch((error) => {
                     console.error(error);
                 });
                 if (!result.cancelled) {
+                    
                     const imageUrl = await this.uploadImage(result.uri);
                     this.props.onSend({ image: imageUrl });
                 }
             }
         } catch (error) {
-            console.error(error);
+            console.error(error, 'cancelled');
         }
     };
 
