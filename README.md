@@ -27,3 +27,5 @@ Create a Chat App with React-Native using Expo.
 ● This will run the open details in the Terminal.<br>
 ● Use the QR code for direct access with your Mobile Device for the sake of this explanation.<br>
 
+## Author
+● LinkedIn: [João Borges Mendonça](https://www.linkedin.com/in/jo%C3%A3o-borges-mendon%C3%A7a-0288a26b/).<br>
